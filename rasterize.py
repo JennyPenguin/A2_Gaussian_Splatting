@@ -4,13 +4,27 @@ from gaussian import gaussian_weight
 
 def render(mu, Sigma, color, opacity, order, H, W):
     # color: (N, 3),  opacity: (N,) in [0, 1],  order: indices sorted front -> back
-    xy = pixel_grid(H, W)                     # (H*W, 2)
-    w  = gaussian_weight(xy, mu, Sigma)       # (P, N)  from P1
-    alpha = opacity[None, :] * w              # (P, N)
+
+    # Colors are straight (non-premultiplied) RGB in [0, 1]
+    # order lists the Gaussians front to back. In 2D there is no real depth, so any fixed order works (plain index order, torch.arange(N), is fine) and the optimizer adapts the colors and opacities to it. In 3D you will instead sort by camera-space depth (P7)
+
+    xy = pixel_grid(H, W)                     # (H * W, 2)
+                                              # H * W = P
+    w  = gaussian_weight(xy, mu, Sigma)       # (P, N)  from P1 (all gaussian 
+                                              # contribution at every pixel)
+    alpha = opacity[None, :] * w              # (P, N), w is falloff
+    # Start with black (no) color
     C = torch.zeros(H * W, 3)
+    # Start with everything passing through
     T = torch.ones(H * W)
+    
+    # A dense per-pixel evaluation over all Gaussians is fine at this scale. If it is slow, cap each Gaussian’s influence to a local window around its center rather than the whole image.
     for i in order:                           # front to back
         a = alpha[:, i]
-        # TODO: C and T compositing here
-        ...
-    return C.reshape(H, W, 3)
+        # C and T compositing here
+        C += T * a * color # a * color is premultiplied RGB
+        T *= (1.0 - a) # Whatever passed through
+    return C.reshape(H, W, 3) # result image is alpha-premultiply over black bg
+
+def pixel_grid(H, W):
+    pass
