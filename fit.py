@@ -10,20 +10,21 @@ def fit_2D(N, target):
     assert d == 3 ["Only Support RGB Comparisons"]
 
     # parameters (leaf tensors, requires_grad=True); a spread-out init, e.g.:
-    mu     = torch.rand(N, 2) * torch.tensor([W, H])          # (N, 2)  spread 
-                                                              # across the image
-    # Start with small percentage of image width and height
-    log_s  = torch.log(0.02 * max(H, W) * torch.ones(N, 2))   # (N, 2)  small 
-                                                              # blobs, log space
-
-    theta  = torch.zeros(N)                                   # (N,)    rotation
+    # Leaf bc we created it directly instead of some differentiable calc
+    # (N, 2) spread across the image
+    mu = torch.rand(N, 2) * torch.tensor([W, H])    
+    mu.requires_grad_(True)      
+    # Start with small percentage of image max width/height
+    # (N, 2) small blobs, log space so true scale always. positive
+    log_s = torch.log(0.02 * max(H, W) * torch.ones(N, 2), requires_grad=True)  
+    # (N,) rotation, none at start
+    theta = torch.zeros(N,requires_grad=True)                                   
 
     # We will apply sigmoid to both color and opacity bc want [0, 1] range
-    color  = torch.zeros(N, 3)                                # (N, 3)  sigmoid 
-                                                              # -> 0.5 gray
-
-    op_raw = torch.full((N,), -2.0)                           # (N,)    sigmoid 
-                                                              # -> ~0.12 opacity
+    # (N, 3) sigmoid -> 0.5 gray, is element-wise
+    color  = torch.zeros(N, 3, requires_grad=True)
+    # (N,) sigmoid -> ~0.12 opacity
+    op_raw = torch.full((N,), -2.0, requires_grad=True)
 
     # First list is list of all parameters to update, lr is learning rate
     opt = torch.optim.Adam([mu, log_s, theta, color, op_raw], lr=1e-2)

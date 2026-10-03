@@ -27,6 +27,7 @@ def render(mu, Sigma, color, opacity, order, H, W):
 
         # C and T compositing here. C dim (P, 3), T dim (P,)
         # DO NOT do += or *= bc those are in-place and corrupt backprob
+        # C = C + is out of place. Create new tensor and repoint C to it
         C = C + T[:,None] * premult 
         T = T * (1.0 - a) # Whatever passed through
     return C.reshape(H, W, 3) # result image is alpha-premultiply over black bg
