@@ -20,11 +20,26 @@ def render(mu, Sigma, color, opacity, order, H, W):
     
     # A dense per-pixel evaluation over all Gaussians is fine at this scale. If it is slow, cap each Gaussian’s influence to a local window around its center rather than the whole image.
     for i in order:                           # front to back
-        a = alpha[:, i]
-        # C and T compositing here
-        C += T * a * color # a * color is premultiplied RGB
-        T *= (1.0 - a) # Whatever passed through
+        a = alpha[:, i] # (P,)
+        c = color[i, :] # (,3)
+        # a * c is premultiplied RGB dim (P, 3)
+        premult = a[:,None] @ c[None,:]
+
+        # C and T compositing here. C dim (P, 3), T dim (P,)
+        # DO NOT do += or *= bc those are in-place and corrupt backprob
+        C = C + T[:,None] * premult 
+        T = T * (1.0 - a) # Whatever passed through
     return C.reshape(H, W, 3) # result image is alpha-premultiply over black bg
 
 def pixel_grid(H, W):
-    pass
+    # Generates pixel coordinates (to help calculate falloff from Gaussian)
+    y_coords = torch.arange(H, dtype=torch.float32)
+    x_coords = torch.arange(W, dtype=torch.float32)
+    grid_x, grid_y = torch.meshgrid(x_coords, y_coords, indexing='xy')
+    # Shape (W, H, 2)
+    coords = torch.stack([grid_x, grid_y], dim=-1)
+    # Reshape to single pixels vector
+    coords = coords.reshape(W * H, 2)
+    # Adds 0.5 for pixel center
+    coords += 0.5;
+    return coords
