@@ -33,14 +33,38 @@ def covariance_2d(scale, theta):
 
 def gaussian_weight(xy, mu, Sigma):
     # xy: (P, 2) pixel coords,  mu: (N, 2),  Sigma: (N, 2, 2)
-    # TODO: w[p, n] = exp(-0.5 (xy_p - mu_n)^T Sigma_n^-1 (xy_p - mu_n))
-    return ...  
+    # w[p, n] = exp(-0.5 (xy_p - mu_n)^T Sigma_n^-1 (xy_p - mu_n))
+    
+    # N is # of Gaussians, P is # of pixels
+    # Want to evaluate each Gaussian at every pixel
+    # Get xy_p - mu_n first, need to transform size to broadcast
+    # Putting None inserts a new dimesion of 1 at this position
+    # Shape (P, N, 2)
+    diff = xy[:, None, :] - mu[None, :, :]
+    # Shape (N, 2, 2)
+    Sigma_inv = torch.linalg.inv(Sigma)
 
+    # For each (P, N) pair, we want to compute the diff^T * Sigma_inv * diff
+    # Convert sigma_inv to (1, N, 2, 2) for broadcasting (actually can skip bc default behavior). To get col version turn diff to (P, N, 2, 1). To get row version turn diff into (P, N, 1, 2). Final result is (P, N, 1, 1)
+    exponent = diff[:,:,None,:] @ Sigma_inv[None,:,:,:] @ diff[:,:,:,None]
+    # Squeeze to get rid of (1, 1) dimension at the end
+    exponent = exponent.squeeze(dim=(-1, -2))
+    result = torch.exp(-0.5 * exponent)
+
+    return result 
+
+# N = 3
 theta = torch.tensor([0, 1, 2], dtype=torch.float32)
 scale = torch.tensor([[1, 2], [5, 6], [3, 3]], dtype=torch.float32)
 C = covariance_2d(scale, theta)
 print(C.shape)
 print(C)
+
+# P = 4
+xy = torch.tensor([[0, 1], [1, 0], [0, 0], [1, 1]], dtype=torch.float32)
+mu = torch.tensor([[0, 0],[1, 1],[2, 2]], dtype=torch.float32)
+G = gaussian_weight(xy, mu, C)
+print(G.shape)
 
 
 

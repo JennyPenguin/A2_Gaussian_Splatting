@@ -5,7 +5,11 @@ import math
 import pytest
 import torch
 
-from gaussian import covariance_2d
+from gaussian import covariance_2d, gaussian_weight
+
+# ============================================================
+# Tests for convariance_2d
+# ============================================================
 
 def test_single_axis_aligned_gaussian():
     """theta = 0 should give diag(sx^2, sy^2)."""
@@ -221,3 +225,343 @@ def test_output_shape(N):
 
     assert cov.shape == (N, 2, 2)
     assert cov.dtype == torch.float32
+
+# ============================================================
+# Tests for gaussian_weight
+# ============================================================
+
+def test_gaussian_weight_single_gaussian_identity_covariance():
+    """
+    For mu = (0, 0) and Sigma = I,
+
+        w(x, y) = exp(-0.5 * (x^2 + y^2))
+
+    so we can easily calculate exact expected values.
+    """
+    xy = torch.tensor([
+        [0.0, 0.0],   # distance^2 = 0
+        [1.0, 0.0],   # distance^2 = 1
+        [0.0, 2.0],   # distance^2 = 4
+        [1.0, 1.0],   # distance^2 = 2
+    ], dtype=torch.float32)
+
+    mu = torch.tensor([
+        [0.0, 0.0]
+    ], dtype=torch.float32)
+
+    Sigma = torch.eye(2, dtype=torch.float32).unsqueeze(0)
+
+    weights = gaussian_weight(xy, mu, Sigma)
+
+    expected = torch.tensor([
+        [1.0],
+        [math.exp(-0.5)],
+        [math.exp(-2.0)],
+        [math.exp(-1.0)],
+    ], dtype=torch.float32)
+
+    assert weights.shape == (4, 1)
+    assert weights.dtype == torch.float32
+    assert torch.allclose(weights, expected, atol=1e-6)
+
+
+def test_gaussian_weight_at_center_is_one():
+    """
+    A Gaussian evaluated exactly at its own center should have
+    weight 1, regardless of its covariance:
+
+        exp(-0.5 * 0) = 1
+    """
+    mu = torch.tensor([
+        [1.0, 2.0],
+        [-3.0, 4.0],
+        [0.5, -1.5],
+    ], dtype=torch.float32)
+
+    scale = torch.tensor([
+        [1.0, 2.0],
+        [3.0, 0.5],
+        [2.0, 4.0],
+    ], dtype=torch.float32)
+
+    theta = torch.tensor([
+        0.0,
+        0.7,
+        -1.2,
+    ], dtype=torch.float32)
+
+    Sigma = covariance_2d(scale, theta)
+
+    # Evaluate each Gaussian at all three centers.
+    weights = gaussian_weight(mu, mu, Sigma)
+
+    assert weights.shape == (3, 3)
+
+    # Entry [i, i] evaluates Gaussian i at its own center.
+    diagonal = torch.diagonal(weights)
+
+    assert torch.allclose(
+        diagonal,
+        torch.ones(3, dtype=torch.float32),
+        atol=1e-6
+    )
+
+
+def test_gaussian_weight_multiple_pixels_multiple_gaussians():
+    """
+    Test broadcasting over both P pixels and N Gaussians.
+
+    Both Gaussians have identity covariance.
+
+    Gaussian 0 center: (0, 0)
+    Gaussian 1 center: (1, 0)
+    """
+    xy = torch.tensor([
+        [0.0, 0.0],
+        [1.0, 0.0],
+        [2.0, 0.0],
+    ], dtype=torch.float32)
+
+    mu = torch.tensor([
+        [0.0, 0.0],
+        [1.0, 0.0],
+    ], dtype=torch.float32)
+
+    Sigma = torch.eye(2, dtype=torch.float32).repeat(2, 1, 1)
+
+    weights = gaussian_weight(xy, mu, Sigma)
+
+    expected = torch.tensor([
+        # Gaussian 0             Gaussian 1
+        [1.0,                    math.exp(-0.5)],
+        [math.exp(-0.5),         1.0],
+        [math.exp(-2.0),         math.exp(-0.5)],
+    ], dtype=torch.float32)
+
+    assert weights.shape == (3, 2)
+    assert torch.allclose(weights, expected, atol=1e-6)
+
+
+def test_gaussian_weight_respects_scale():
+    """
+    For an axis-aligned Gaussian with scale = (2, 1),
+
+        Sigma = [[4, 0],
+                 [0, 1]]
+
+    At point (2, 0):
+
+        d^T Sigma^-1 d = 1
+
+    so weight = exp(-0.5).
+
+    At point (0, 2):
+
+        d^T Sigma^-1 d = 4
+
+    so weight = exp(-2).
+
+    This checks that covariance scale affects the Gaussian correctly.
+    """
+    xy = torch.tensor([
+        [2.0, 0.0],
+        [0.0, 2.0],
+    ], dtype=torch.float32)
+
+    mu = torch.tensor([
+        [0.0, 0.0]
+    ], dtype=torch.float32)
+
+    scale = torch.tensor([
+        [2.0, 1.0]
+    ], dtype=torch.float32)
+
+    theta = torch.tensor([
+        0.0
+    ], dtype=torch.float32)
+
+    Sigma = covariance_2d(scale, theta)
+
+    weights = gaussian_weight(xy, mu, Sigma)
+
+    expected = torch.tensor([
+        [math.exp(-0.5)],
+        [math.exp(-2.0)],
+    ], dtype=torch.float32)
+
+    assert torch.allclose(weights, expected, atol=1e-6)
+
+
+def test_gaussian_weight_respects_rotation():
+    """
+    Start with scale = (2, 1).
+
+    Without rotation, the long axis is x.
+
+    After a 90-degree rotation, the long axis becomes y.
+
+    Therefore:
+        point (0, 2) should have Mahalanobis distance^2 = 1
+        point (2, 0) should have Mahalanobis distance^2 = 4
+    """
+    xy = torch.tensor([
+        [0.0, 2.0],
+        [2.0, 0.0],
+    ], dtype=torch.float32)
+
+    mu = torch.tensor([
+        [0.0, 0.0]
+    ], dtype=torch.float32)
+
+    scale = torch.tensor([
+        [2.0, 1.0]
+    ], dtype=torch.float32)
+
+    theta = torch.tensor([
+        math.pi / 2
+    ], dtype=torch.float32)
+
+    Sigma = covariance_2d(scale, theta)
+
+    weights = gaussian_weight(xy, mu, Sigma)
+
+    expected = torch.tensor([
+        [math.exp(-0.5)],
+        [math.exp(-2.0)],
+    ], dtype=torch.float32)
+
+    assert torch.allclose(weights, expected, atol=1e-5)
+
+
+def test_gaussian_weight_is_between_zero_and_one():
+    """
+    For a valid positive-definite covariance,
+
+        d^T Sigma^-1 d >= 0
+
+    so Gaussian weights must satisfy:
+
+        0 < weight <= 1
+    """
+    xy = torch.tensor([
+        [-5.0, 2.0],
+        [0.0, 0.0],
+        [1.0, 3.0],
+        [4.0, -2.0],
+    ], dtype=torch.float32)
+
+    mu = torch.tensor([
+        [0.0, 0.0],
+        [2.0, 1.0],
+        [-1.0, 3.0],
+    ], dtype=torch.float32)
+
+    scale = torch.tensor([
+        [1.0, 2.0],
+        [3.0, 0.5],
+        [2.0, 4.0],
+    ], dtype=torch.float32)
+
+    theta = torch.tensor([
+        0.3,
+        -0.8,
+        1.4,
+    ], dtype=torch.float32)
+
+    Sigma = covariance_2d(scale, theta)
+
+    weights = gaussian_weight(xy, mu, Sigma)
+
+    assert weights.shape == (4, 3)
+
+    assert torch.all(weights >= 0.0)
+    assert torch.all(weights <= 1.0 + 1e-6)
+
+
+@pytest.mark.parametrize(
+    "P,N",
+    [
+        (1, 1),
+        (10, 1),
+        (1, 10),
+        (5, 7),
+        (100, 20),
+    ]
+)
+def test_gaussian_weight_output_shape(P, N):
+    """Output should always have shape (P, N)."""
+    xy = torch.randn(P, 2, dtype=torch.float32)
+    mu = torch.randn(N, 2, dtype=torch.float32)
+
+    scale = torch.rand(N, 2, dtype=torch.float32) + 0.5
+    theta = torch.randn(N, dtype=torch.float32)
+
+    Sigma = covariance_2d(scale, theta)
+
+    weights = gaussian_weight(xy, mu, Sigma)
+
+    assert weights.shape == (P, N)
+    assert weights.dtype == torch.float32
+
+
+def test_gaussian_weight_gradients_propagate():
+    """
+    Most important autograd test:
+
+    Make sure gradients can propagate through the complete chain
+
+        scale, theta
+             ↓
+        covariance_2d
+             ↓
+           Sigma
+             ↓
+        gaussian_weight
+             ↓
+            loss
+
+    Also verify gradients reach mu.
+    """
+    xy = torch.tensor([
+        [0.5, 1.2],
+        [-0.7, 0.3],
+        [2.0, -1.0],
+    ], dtype=torch.float32)
+
+    mu = torch.tensor([
+        [0.2, -0.1],
+        [1.1, 0.7],
+    ], dtype=torch.float32, requires_grad=True)
+
+    scale = torch.tensor([
+        [1.5, 0.8],
+        [2.0, 1.2],
+    ], dtype=torch.float32, requires_grad=True)
+
+    theta = torch.tensor([
+        0.37,
+        -0.61,
+    ], dtype=torch.float32, requires_grad=True)
+
+    Sigma = covariance_2d(scale, theta)
+
+    weights = gaussian_weight(xy, mu, Sigma)
+
+    # Use unequal coefficients to avoid accidental symmetry/cancellation.
+    coefficients = torch.tensor([
+        [1.0, 2.0],
+        [3.0, 0.5],
+        [1.7, 4.0],
+    ], dtype=torch.float32)
+
+    loss = (weights * coefficients).sum()
+
+    loss.backward()
+
+    assert mu.grad is not None
+    assert scale.grad is not None
+    assert theta.grad is not None
+
+    assert torch.isfinite(mu.grad).all()
+    assert torch.isfinite(scale.grad).all()
+    assert torch.isfinite(theta.grad).all()
