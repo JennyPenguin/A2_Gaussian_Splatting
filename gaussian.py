@@ -53,18 +53,20 @@ def gaussian_weight(xy, mu, Sigma):
 
     return result 
 
-# N = 3
-theta = torch.tensor([0, 1, 2], dtype=torch.float32)
-scale = torch.tensor([[1, 2], [5, 6], [3, 3]], dtype=torch.float32)
-C = covariance_2d(scale, theta)
-print(C.shape)
-print(C)
 
-# P = 4
-xy = torch.tensor([[0, 1], [1, 0], [0, 0], [1, 1]], dtype=torch.float32)
-mu = torch.tensor([[0, 0],[1, 1],[2, 2]], dtype=torch.float32)
-G = gaussian_weight(xy, mu, C)
-print(G.shape)
+## Small Self Checks
+# # N = 3
+# theta = torch.tensor([0, 1, 2], dtype=torch.float32)
+# scale = torch.tensor([[1, 2], [5, 6], [3, 3]], dtype=torch.float32)
+# C = covariance_2d(scale, theta)
+# print(C.shape)
+# print(C)
+
+# # P = 4
+# xy = torch.tensor([[0, 1], [1, 0], [0, 0], [1, 1]], dtype=torch.float32)
+# mu = torch.tensor([[0, 0],[1, 1],[2, 2]], dtype=torch.float32)
+# G = gaussian_weight(xy, mu, C)
+# print(G.shape)
 
 
 
