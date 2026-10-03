@@ -1,0 +1,47 @@
+import torch
+
+# Scale & Theta should have dtype=torch.float32
+def covariance_2d(scale, theta):
+    # scale: (N, 2) positive,  theta: (N,) radians
+    
+    # Build R(theta) and S = diag(scale), return Sigma = R S S^T R^T  -> (N, 2, 2)
+
+    # Ensure scale & theta are both tensors but they really should be already 
+    if not isinstance(scale, torch.Tensor):
+        scale = torch.tensor(scale, dtype=torch.float32)
+
+    if not isinstance(theta, torch.Tensor):
+        theta = torch.tensor(theta, dtype=torch.float32)
+
+    cos_t = torch.cos(theta)
+    sin_t = torch.sin(theta)
+    # Standard 2D Rotation Matrix
+    # Counterclosewise but don't matter bc gradient will adapt anyway
+    # R has shape (2, 2, N), will transpose later so each row is actually col
+    R = torch.stack([
+        torch.stack([cos_t, sin_t]),
+        torch.stack([-sin_t, cos_t])
+    ])
+    # Transpose bc we want N to be outermost layer. Now shape (N, 2, 2)
+    R = R.transpose(0, -1)
+
+    # S has shape (N, 2, 2) -> replace each vector with diagonal matrix
+    S = torch.diag_embed(scale)
+    # .mT is batch response
+    # Square scale because variance
+    return R @ S @ S.mT @ R.mT
+
+def gaussian_weight(xy, mu, Sigma):
+    # xy: (P, 2) pixel coords,  mu: (N, 2),  Sigma: (N, 2, 2)
+    # TODO: w[p, n] = exp(-0.5 (xy_p - mu_n)^T Sigma_n^-1 (xy_p - mu_n))
+    return ...  
+
+theta = torch.tensor([0, 1, 2], dtype=torch.float32)
+scale = torch.tensor([[1, 2], [5, 6], [3, 3]], dtype=torch.float32)
+C = covariance_2d(scale, theta)
+print(C.shape)
+print(C)
+
+
+
+
