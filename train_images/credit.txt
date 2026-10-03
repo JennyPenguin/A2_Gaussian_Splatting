@@ -1,0 +1,1 @@
+Image credits: coffee (CC0), astronaut (public domain, NASA), cat (CC0), via the scikit-image sample data.
