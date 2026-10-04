@@ -9,9 +9,10 @@ from image import load_normalized_image, save_normalized_image
 # P5: Fit the 2D Gaussians
 # ---------------------------------------------------------------------
 gaussian_budget = [256, 1024, 4096]
-images = ["train_images/astronaut", 
-          "train_images/cat", 
-          "train_images/coffee"]
+init_N = 128
+images = ["train_images/coffee",
+          "train_images/astronaut", 
+          "train_images/cat"]
 
 def train_2D():
     for image in images:
@@ -22,7 +23,6 @@ def train_2D():
             print(f"Training for image {image} and budget: {budget}")
             # Start with 1/4 of target so can have good approximation in first
             # iterations before densify and can fully densify at least twice
-            init_N = budget // 4
             mu, log_s, theta, color, op_raw = fit_2D(init_N, target, budget)
             img, psnr = evaluate(mu, log_s, theta, color, op_raw, target)
             print(f"\033[31mpsnr: {psnr} for image {image} and final Gaussian count {mu.shape[0]}\033[0m")

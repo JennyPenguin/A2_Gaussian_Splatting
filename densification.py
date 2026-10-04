@@ -1,7 +1,7 @@
 import torch
 
 # densify Gaussian i if g_i > grad_threshold
-grad_threshold = 2e-4
+grad_threshold = 2e-6
 # clone if max scale <= 2% of image width, else split
  # each split child gets (parent scale / split_scale)
 size_threshold = 0.02
@@ -34,6 +34,7 @@ def densify(gaussians, grad_mag, budget, W, H):
     # Only keep indices that survive pruning
     pruned_indices = indices[prune_mask]
     pruned_N = pruned_indices.shape[0]
+    print(f"Number of prune: {N - pruned_N}/{N}")
     mu_p, log_s_p, theta_p, color_p, op_raw_p = mu[pruned_indices], log_s[pruned_indices], theta[pruned_indices], color[pruned_indices], op_raw[pruned_indices]
     grad_mag_p = grad_mag[pruned_indices]
 
@@ -47,6 +48,13 @@ def densify(gaussians, grad_mag, budget, W, H):
     # dense = grad_mag (without pruned) > grad_threshold (under-fit Gaussians)
     mask_dense = grad_mag_p > grad_threshold
     dense_g = grad_mag_p[mask_dense]
+    print(
+        f"grad_mag: "
+        f"min={grad_mag.min().item():.5e}, "
+        f"mean={grad_mag.mean().item():.5e}, "
+        f"max={grad_mag.max().item():.5e}"
+    )
+    print(f"Number of dense: {dense_g.shape[0]}/{N}")
     dense_i = indices_p[mask_dense]
 
     # keep the total count <= budget, don't care what top Gaussian losses are
