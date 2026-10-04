@@ -9,11 +9,14 @@ from image import load_normalized_image, save_normalized_image
 # ---------------------------------------------------------------------
 # P5: Fit the 2D Gaussians
 # ---------------------------------------------------------------------
-gaussian_budget = [256, 1024, 4096]
+densification_runs = 2
+gaussian_budget = [1024]
 init_N = 128
-images = ["train_images/coffee",
-          "train_images/astronaut", 
-          "train_images/cat"]
+images = [
+    "train_images/coffee",
+    # "train_images/astronaut", 
+    # "train_images/cat"
+]
 image_colors = {
     "train_images/coffee": "red",
     "train_images/astronaut": "blue",
@@ -35,20 +38,22 @@ def train_2D():
         for image in images:
             # fit_2D will move it to GPU if needed
             target = loaded_images[image]
-            print(f"Training for image {image} and budget: {budget}")
-            # Start with 1/4 of target so can have good approximation in first
-            # iterations before densify and can fully densify at least twice
-            mu, log_s, theta, color, op_raw = fit_2D(budget, target, budget, densification=False)
-            img, psnr = evaluate(mu, log_s, theta, color, op_raw, target)
+            for densify in range(densification_runs):
+                print(f"Training for image {image} and budget: {budget} and densifcation: {densify}")
+                # Start with 1/4 of target so can have good approximation in first
+                # iterations before densify and can fully densify at least twice
+                start_N = init_N if densify else budget
+                mu, log_s, theta, color, op_raw = fit_2D(start_N, target, budget, densification=bool(densify))
+                img, psnr = evaluate(mu, log_s, theta, color, op_raw, target)
 
-            print(f"\033[31mpsnr: {psnr} for image {image} and final Gaussian count {mu.shape[0]}\033[0m")
+                print(f"\033[31mpsnr: {psnr} for image {image} and final Gaussian count {mu.shape[0]}\033[0m")
 
-            x, y = lines_xy[image]
-            x.append(budget)
-            y.append(psnr.item())
-            lines_xy[image] = (x, y)
+                x, y = lines_xy[image]
+                x.append(budget)
+                y.append(psnr.item())
+                lines_xy[image] = (x, y)
 
-            save_normalized_image(image + str(budget) + ".png", img)
+                save_normalized_image(image + str(budget) + "_" + str(densify) + ".png", img)
 
 train_2D()
 plt.title("PSNR based on Number of Gaussians")
