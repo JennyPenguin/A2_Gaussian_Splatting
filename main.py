@@ -9,7 +9,7 @@ from image import load_normalized_image, save_normalized_image
 # P5: Fit the 2D Gaussians
 # ---------------------------------------------------------------------
 gaussian_budget = [4096]
-init_N = 128
+init_N = 4096
 images = ["train_images/coffee",
           "train_images/astronaut", 
           "train_images/cat"]

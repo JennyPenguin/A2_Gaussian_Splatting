@@ -4,6 +4,7 @@ import time
 from gaussian import covariance_2d
 from rasterize import render
 from densification import densify
+from image import save_normalized_image
 
 # run a pass every 200 optimization steps
 densify_every = 200
@@ -19,7 +20,7 @@ def get_device():
 
 device = get_device()
 
-def fit_2D(N, target, max_count):
+def fit_2D(N, target, max_count, densification=True):
     assert N <= max_count, "Started with more Gaussians than allowed!"
 
     target = target.to(device)
@@ -52,13 +53,39 @@ def fit_2D(N, target, max_count):
     grad_mag = torch.zeros((N,), device=device)
     start = time.time()
     for step in range(1, train_iters):
+        # params = {
+        #     "mu": mu,
+        #     "log_s": log_s,
+        #     "theta": theta,
+        #     "color": color,
+        #     "op_raw": op_raw,
+        # }
 
         # By learning log scale and then exp, we guarantee scale is positive
         # Because exp multiply, also means when we add to log scale we multiply
         # original scale so same percentage increase regardless of org size.
-        Sigma = covariance_2d(log_s.exp(), theta)
+        s = log_s.exp()
+        Sigma = covariance_2d(s, theta)
         img   = render(mu, Sigma, color.sigmoid(), op_raw.sigmoid(), depth_order(mu), H, W)
         loss  = ((img - target) ** 2).mean()
+
+        # if step % 100 == 0:
+        #     print(
+        #         f"step={step}, "
+        #         f"scale min={s.min().item():.3e}, "
+        #         f"scale max={s.max().item():.3e}"
+        #     )
+        #     print("loss:", loss.item())
+
+        # if not torch.isfinite(Sigma).all():
+        #     print("Bad Sigma at", step)
+
+        # if not torch.isfinite(img).all():
+        #     print("Bad image at", step)
+
+        # if not torch.isfinite(loss):
+        #     print("Bad loss at", step)
+        
         opt.zero_grad(); loss.backward(); 
 
         # Only look at loss on mean bc positional change implies the gaussian
@@ -67,10 +94,24 @@ def fit_2D(N, target, max_count):
         # scales.
         grad_mag += torch.norm(mu.grad, dim=-1) / densify_every
 
+        # for name, x in params.items():
+        #     if x.grad is not None and not torch.isfinite(x.grad).all():
+        #         print(f"NON-FINITE GRADIENT at step {step}: {name}")
+        #         raise RuntimeError("Non-finite gradient")
+
         # Adam step does not clear gradients but still put before just in case.
         opt.step()
 
-        if step == 1 or step % 20 == 0:
+        # for name, x in params.items():
+        #     if not torch.isfinite(x).all():
+        #         print(f"NON-FINITE PARAMETER at step {step}: {name}")
+        #         print(
+        #             "min =", torch.nan_to_num(x).min().item(),
+        #             "max =", torch.nan_to_num(x).max().item(),
+        #         )
+        #         raise RuntimeError("Non-finite parameter")
+
+        if step == 1 or step % densify_every == 0:
             psnr = -10 * torch.log10(loss)
             print(f"PSNR: {psnr}")
 
@@ -82,20 +123,22 @@ def fit_2D(N, target, max_count):
             elapsed = time.time() - start
             print(f"iter {step} seconds/step: {elapsed / densify_every}")
             start = time.time()
+            save_normalized_image(f"debug/{step}.png", img.detach())
 
-            gaussians = densify((mu, log_s, theta, color, op_raw), grad_mag,max_count, W, H)
+            if densification:
+                gaussians = densify((mu, log_s, theta, color, op_raw), grad_mag,max_count, W, H)
 
-            # Add gradients on new Gaussians
-            mu, log_s, theta, color, op_raw = make_trainable(gaussians)
+                # Add gradients on new Gaussians
+                mu, log_s, theta, color, op_raw = make_trainable(gaussians)
 
-            # Clear accumulated gradient magnitudes. Need to resize because 
-            # Gaussian count likely changed.
-            grad_mag = torch.zeros(
-                mu.shape[0],
-                device=device
-            )
-            # Restart Adam
-            opt = torch.optim.Adam([mu, log_s, theta, color, op_raw], lr=1e-2)
+                # Clear accumulated gradient magnitudes. Need to resize because 
+                # Gaussian count likely changed.
+                grad_mag = torch.zeros(
+                    mu.shape[0],
+                    device=device
+                )
+                # Restart Adam
+                opt = torch.optim.Adam([mu, log_s, theta, color, op_raw], lr=1e-2)
     return mu, log_s, theta, color, op_raw
     
 def depth_order(mu):
