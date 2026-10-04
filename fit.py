@@ -3,6 +3,12 @@ import torch
 from gaussian import covariance_2d
 from rasterize import render
 
+# run a pass every 200 optimization steps
+densify_every = 200
+# a target count N from P5 (e.g. 256, 1024, 4096)
+max_count = 256     
+
+
 def fit_2D(N, target):
     # N is # of Gaussians to fit, target is target image, depth_order is 
     W, H, d = target.shape
@@ -11,7 +17,8 @@ def fit_2D(N, target):
 
     # parameters (leaf tensors, requires_grad=True); a spread-out init, e.g.:
     # Leaf bc we created it directly instead of some differentiable calc
-    # (N, 2) spread across the image
+
+    # (N, 2) spread across the image so they are not all together
     mu = torch.rand(N, 2) * torch.tensor([W, H])    
     mu.requires_grad_(True)      
     # Start with small percentage of image max width/height
