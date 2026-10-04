@@ -2,6 +2,7 @@ import torch
 
 from gaussian import gaussian_weight
 
+# Faster version by chatGPT with cumprod
 def render(mu, Sigma, color, opacity, order, H, W):
     # P = H * W
 

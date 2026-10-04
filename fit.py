@@ -51,15 +51,9 @@ def fit_2D(N, target, max_count, densification=True):
     # First list is list of all parameters to update, lr is learning rate
     opt = torch.optim.Adam([mu, log_s, theta, color, op_raw], lr=1e-2)
     grad_mag = torch.zeros((N,), device=device)
-    start = time.time()
     for step in range(1, train_iters):
-        # params = {
-        #     "mu": mu,
-        #     "log_s": log_s,
-        #     "theta": theta,
-        #     "color": color,
-        #     "op_raw": op_raw,
-        # }
+        # torch.mps.synchronize()
+        # t0 = time.perf_counter()
 
         # By learning log scale and then exp, we guarantee scale is positive
         # Because exp multiply, also means when we add to log scale we multiply
@@ -67,63 +61,41 @@ def fit_2D(N, target, max_count, densification=True):
         s = log_s.exp()
         Sigma = covariance_2d(s, theta)
         img   = render(mu, Sigma, color.sigmoid(), op_raw.sigmoid(), depth_order(mu), H, W)
+
+        # torch.mps.synchronize()
+        # t1 = time.perf_counter()
+
         loss  = ((img - target) ** 2).mean()
-
-        # if step % 100 == 0:
-        #     print(
-        #         f"step={step}, "
-        #         f"scale min={s.min().item():.3e}, "
-        #         f"scale max={s.max().item():.3e}"
-        #     )
-        #     print("loss:", loss.item())
-
-        # if not torch.isfinite(Sigma).all():
-        #     print("Bad Sigma at", step)
-
-        # if not torch.isfinite(img).all():
-        #     print("Bad image at", step)
-
-        # if not torch.isfinite(loss):
-        #     print("Bad loss at", step)
         
         opt.zero_grad(); loss.backward(); 
+
+        # torch.mps.synchronize()
+        # t2 = time.perf_counter()
 
         # Only look at loss on mean bc positional change implies the gaussian
         # is constantly shifted because there is not enough Gaussians or the
         # Gaussian is too big. Adding other grad leads to too many grad at diff
         # scales.
-        grad_mag += torch.norm(mu.grad, dim=-1) / densify_every
+        if densification:
+            grad_mag += torch.norm(mu.grad, dim=-1) / densify_every
 
-        # for name, x in params.items():
-        #     if x.grad is not None and not torch.isfinite(x.grad).all():
-        #         print(f"NON-FINITE GRADIENT at step {step}: {name}")
-        #         raise RuntimeError("Non-finite gradient")
-
-        # Adam step does not clear gradients but still put before just in case.
         opt.step()
 
-        # for name, x in params.items():
-        #     if not torch.isfinite(x).all():
-        #         print(f"NON-FINITE PARAMETER at step {step}: {name}")
-        #         print(
-        #             "min =", torch.nan_to_num(x).min().item(),
-        #             "max =", torch.nan_to_num(x).max().item(),
-        #         )
-        #         raise RuntimeError("Non-finite parameter")
+        # torch.mps.synchronize()
+        # t3 = time.perf_counter()
+
+        # print("forward:", t1 - t0)
+        # print("backward:", t2 - t1)
+        # print("optimizer:", t3 - t2)
 
         if step == 1 or step % densify_every == 0:
             psnr = -10 * torch.log10(loss)
-            print(f"PSNR: {psnr}")
+            # print(f"Step {step} PSNR: {psnr}")
 
         # Don't densify on last iteration bc won't have time to adapt cloned/
         # split Gaussians afterwards
         if step % densify_every == 0 and step < 2000:
-            if device == "mps":
-                        torch.mps.synchronize()
-            elapsed = time.time() - start
-            print(f"iter {step} seconds/step: {elapsed / densify_every}")
-            start = time.time()
-            save_normalized_image(f"debug/{step}.png", img.detach())
+            # save_normalized_image(f"debug/{step}.png", img.detach())
 
             if densification:
                 gaussians = densify((mu, log_s, theta, color, op_raw), grad_mag,max_count, W, H)

@@ -31,6 +31,7 @@ def covariance_2d(scale, theta):
     # Square scale because variance
     return R @ S @ S.mT @ R.mT
 
+# Faster version by chatGPT by breaking down product
 def gaussian_weight(xy, mu, Sigma):
     # (P, N)
     dx = xy[:, None, 0] - mu[None, :, 0]
