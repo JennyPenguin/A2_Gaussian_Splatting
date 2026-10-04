@@ -7,6 +7,8 @@ from densification import densify
 # run a pass every 200 optimization steps
 densify_every = 200
 
+train_iters = 2000
+
 def get_device():
     if torch.cuda.is_available():
         return "cuda"
@@ -47,7 +49,7 @@ def fit_2D(N, target, max_count):
     # First list is list of all parameters to update, lr is learning rate
     opt = torch.optim.Adam([mu, log_s, theta, color, op_raw], lr=1e-2)
     grad_mag = torch.zeros((N,), device=device)
-    for step in range(1, 2001):
+    for step in range(1, train_iters+1):
         # By learning log scale and then exp, we guarantee scale is positive
         # Because exp multiply, also means when we add to log scale we multiply
         # original scale so same percentage increase regardless of org size.
@@ -70,6 +72,7 @@ def fit_2D(N, target, max_count):
         # Don't densify on last iteration bc won't have time to adapt cloned/
         # split Gaussians afterwards
         if step % densify_every == 0 and step < 2000:
+            print(step)
             gaussians = densify((mu, log_s, theta, color, op_raw), grad_mag,max_count, W, H)
 
             # Add gradients on new Gaussians

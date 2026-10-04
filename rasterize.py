@@ -3,6 +3,43 @@ import torch
 from gaussian import gaussian_weight
 
 def render(mu, Sigma, color, opacity, order, H, W):
+    # P = H * W
+
+    xy = pixel_grid(H, W).to(mu.device)       # (P, 2)
+
+    # Gaussian falloff at every pixel
+    w = gaussian_weight(xy, mu, Sigma)         # (P, N)
+
+    # Per-pixel Gaussian alpha
+    alpha = opacity[None, :] * w               # (P, N)
+
+    # Sort front -> back
+    alpha = alpha[:, order]                    # (P, N)
+    color = color[order]                       # (N, 3)
+
+    # T_i = product of (1-alpha_j) for j < i
+    T = torch.cumprod(
+        torch.cat([
+            torch.ones(
+                alpha.shape[0],
+                1,
+                device=alpha.device,
+                dtype=alpha.dtype
+            ),
+            1.0 - alpha
+        ], dim=1),
+        dim=1
+    )[:, :-1]                                  # (P, N)
+
+    # Premultiplied contribution from every Gaussian
+    weights = T * alpha                        # (P, N)
+
+    # Sum all Gaussian colors
+    C = weights @ color                        # (P, 3)
+
+    return C.reshape(H, W, 3)
+
+def render_naive(mu, Sigma, color, opacity, order, H, W):
     # color: (N, 3),  opacity: (N,) in [0, 1],  order: indices sorted front -> back
 
     # Colors are straight (non-premultiplied) RGB in [0, 1]

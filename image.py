@@ -10,6 +10,6 @@ def load_normalized_image(path: str):
 
 def save_normalized_image(path: str, img):
     # img is originally pytorch tensor so we convert to numpy for saving
-    img = img.numpy()
+    img = img.cpu().numpy()
     img = (np.round(img * 255.0)).astype(np.uint8)
     Image.fromarray(img).save(path)
