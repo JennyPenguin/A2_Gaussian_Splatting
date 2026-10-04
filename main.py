@@ -8,13 +8,15 @@ from image import load_normalized_image, save_normalized_image
 # ---------------------------------------------------------------------
 # P5: Fit the 2D Gaussians
 # ---------------------------------------------------------------------
-gaussian_budget = [256, 1024, 4096]
+gaussian_budget = [4096]
 init_N = 128
 images = ["train_images/coffee",
           "train_images/astronaut", 
           "train_images/cat"]
 
 def train_2D():
+    # set seed so can compare consistently
+    torch.manual_seed(0)
     for image in images:
         # fit_2D will move it to GPU if needed
         target = load_normalized_image(image + ".png")

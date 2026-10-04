@@ -1,7 +1,7 @@
 import torch
 
 # densify Gaussian i if g_i > grad_threshold
-grad_threshold = 2e-6
+grad_threshold = 2e-7
 # clone if max scale <= 2% of image width, else split
  # each split child gets (parent scale / split_scale)
 size_threshold = 0.02

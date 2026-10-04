@@ -32,6 +32,25 @@ def covariance_2d(scale, theta):
     return R @ S @ S.mT @ R.mT
 
 def gaussian_weight(xy, mu, Sigma):
+    # (P, N)
+    dx = xy[:, None, 0] - mu[None, :, 0]
+    dy = xy[:, None, 1] - mu[None, :, 1]
+
+    Sigma_inv = torch.linalg.inv(Sigma)
+
+    a = Sigma_inv[:, 0, 0]
+    b = Sigma_inv[:, 0, 1]
+    c = Sigma_inv[:, 1, 1]
+
+    exponent = (
+        a[None, :] * dx.square()
+        + 2.0 * b[None, :] * dx * dy
+        + c[None, :] * dy.square()
+    )
+
+    return torch.exp(-0.5 * exponent)
+
+def gaussian_weight_naive(xy, mu, Sigma):
     # xy: (P, 2) pixel coords,  mu: (N, 2),  Sigma: (N, 2, 2)
     # w[p, n] = exp(-0.5 (xy_p - mu_n)^T Sigma_n^-1 (xy_p - mu_n))
     

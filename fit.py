@@ -1,4 +1,5 @@
 import torch
+import time
 
 from gaussian import covariance_2d
 from rasterize import render
@@ -49,7 +50,9 @@ def fit_2D(N, target, max_count):
     # First list is list of all parameters to update, lr is learning rate
     opt = torch.optim.Adam([mu, log_s, theta, color, op_raw], lr=1e-2)
     grad_mag = torch.zeros((N,), device=device)
-    for step in range(1, train_iters+1):
+    start = time.time()
+    for step in range(1, train_iters):
+
         # By learning log scale and then exp, we guarantee scale is positive
         # Because exp multiply, also means when we add to log scale we multiply
         # original scale so same percentage increase regardless of org size.
@@ -72,7 +75,12 @@ def fit_2D(N, target, max_count):
         # Don't densify on last iteration bc won't have time to adapt cloned/
         # split Gaussians afterwards
         if step % densify_every == 0 and step < 2000:
-            print(step)
+            if device == "mps":
+                        torch.mps.synchronize()
+            elapsed = time.time() - start
+            print(f"iter {step} seconds/step: {elapsed / densify_every}")
+            start = time.time()
+
             gaussians = densify((mu, log_s, theta, color, op_raw), grad_mag,max_count, W, H)
 
             # Add gradients on new Gaussians
