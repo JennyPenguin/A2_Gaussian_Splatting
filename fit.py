@@ -96,3 +96,13 @@ def make_trainable(gaussians):
         x.detach().requires_grad_(True)
         for x in gaussians
     )
+
+# Evaluation, don't calculate any gradients
+@torch.no_grad()
+def evaluate(mu, log_s, theta, color, op_raw, target):
+    H, W, _ = target.shape
+    Sigma = covariance_2d(log_s.exp(), theta)
+    img   = render(mu, Sigma, color.sigmoid(), op_raw.sigmoid(), depth_order(mu), H, W)
+    loss  = ((img - target) ** 2).mean()
+    psnr = -10 * torch.log10(loss)
+    return (img, psnr)
