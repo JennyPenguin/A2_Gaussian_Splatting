@@ -70,7 +70,9 @@ def fit_2D(N, target, max_count):
         # Adam step does not clear gradients but still put before just in case.
         opt.step()
 
-        # psnr = -10 * torch.log10(loss)
+        if step == 1 or step % 20 == 0:
+            psnr = -10 * torch.log10(loss)
+            print(f"PSNR: {psnr}")
 
         # Don't densify on last iteration bc won't have time to adapt cloned/
         # split Gaussians afterwards
