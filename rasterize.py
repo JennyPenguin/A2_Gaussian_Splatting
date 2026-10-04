@@ -10,13 +10,14 @@ def render(mu, Sigma, color, opacity, order, H, W):
 
     xy = pixel_grid(H, W)                     # (H * W, 2)
                                               # H * W = P
+    xy = xy.to(mu.device)
     w  = gaussian_weight(xy, mu, Sigma)       # (P, N)  from P1 (all gaussian 
                                               # contribution at every pixel)
     alpha = opacity[None, :] * w              # (P, N), w is falloff
     # Start with black (no) color
-    C = torch.zeros(H * W, 3)
+    C = torch.zeros(H * W, 3, device=mu.device)
     # Start with everything passing through
-    T = torch.ones(H * W)
+    T = torch.ones(H * W, device=mu.device)
     
     # A dense per-pixel evaluation over all Gaussians is fine at this scale. If it is slow, cap each Gaussian’s influence to a local window around its center rather than the whole image.
     for i in order:                           # front to back
@@ -42,5 +43,5 @@ def pixel_grid(H, W):
     # Reshape to single pixels vector
     coords = coords.reshape(W * H, 2)
     # Adds 0.5 for pixel center
-    coords += 0.5;
+    coords += 0.5
     return coords

@@ -6,8 +6,6 @@ from densification import densify
 
 # run a pass every 200 optimization steps
 densify_every = 200
-# a target count N from P5 (e.g. 256, 1024, 4096)
-max_count = 256    
 
 def get_device():
     if torch.cuda.is_available():
@@ -18,7 +16,7 @@ def get_device():
 
 device = get_device()
 
-def fit_2D(N, target):
+def fit_2D(N, target, max_count):
     assert N <= max_count, "Started with more Gaussians than allowed!"
 
     target = target.to(device)
@@ -35,9 +33,10 @@ def fit_2D(N, target):
     mu.requires_grad_(True)  
     # Start with small percentage of image max width/height
     # (N, 2) small blobs, log space so true scale always. positive
-    log_s = torch.log(0.02 * max(H, W) * torch.ones(N, 2), requires_grad=True, device=device)  
+    log_s = torch.log(0.02 * max(H, W) * torch.ones(N, 2, device=device))  
+    log_s.requires_grad_(True)
     # (N,) rotation, none at start
-    theta = torch.zeros(N,requires_grad=True, device=device)                                   
+    theta = torch.zeros(N, requires_grad=True, device=device)                                   
 
     # We will apply sigmoid to both color and opacity bc want [0, 1] range
     # (N, 3) sigmoid -> 0.5 gray, is element-wise
