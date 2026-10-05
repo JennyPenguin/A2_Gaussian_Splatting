@@ -9,12 +9,12 @@ from image import load_normalized_image, save_normalized_image
 # ---------------------------------------------------------------------
 # P5: Fit the 2D Gaussians
 # ---------------------------------------------------------------------
-densification_runs = 2
-gaussian_budget = [1024]
+densification_runs = 1
+gaussian_budget = [256, 1024, 4096]
 images = [
     "train_images/coffee",
-    # "train_images/astronaut", 
-    # "train_images/cat"
+    "train_images/astronaut", 
+    "train_images/cat"
 ]
 image_colors = {
     "train_images/coffee": "red",
