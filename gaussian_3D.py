@@ -46,12 +46,46 @@ def covariance_3d(scale, quat):
     S = torch.diag_embed(scale)
     return R @ S @ S.mT @ R.mT
 
+# R_wc - world to camera rotation
+# t - translation
+# x_c = R_wcX_world + t = (x_c, y_c, z_c)
+# K is camera intrinsics matrix, pinhole camera
+# K = [[f_x , 0, c_x]
+#   =  [0, f_y, c_y],
+#   =  [0, 0, 1]]
+# R_wc: (3, 3), K: (3, 3), t:(3,)
 def project_gaussian(mu3, Sigma3, R_wc, t, K):
     # mu3: (N, 3) world means,  Sigma3: (N, 3, 3) world covariances
-    mu_cam = mu3 @ R_wc.T + t                  # world -> camera
-    # TODO: mu2   = perspective-project mu_cam with K            (N, 2)
-    # TODO: J     = Jacobian of the projection at mu_cam         (N, 2, 3)
-    # TODO: Scam  = R_wc @ Sigma3 @ R_wc.T                       (N, 3, 3)
-    #       Sig2 = J @ Scam @ J.transpose(-1, -2)                (N, 2, 2)
-    depth = mu_cam[:, 2]
+    # tranpose of equation bc each X is a row and not vector here
+    mu_cam = mu3 @ R_wc.T + t # world -> camera
+    # mu2  =  perspective-project mu_cam with K    (N, 2)
+    fx = K[0][0]
+    fy = K[1][1]
+    cx = K[0][2]
+    cy = K[1][2]
+    # z_c
+    depth = mu_cam[:,2]
+    # (2, N)
+    mu2 = torch.stack([
+        mu_cam[:,0] * fx / depth + cx,
+        mu_cam[:,1] * fy / depth + cy,
+    ], dim=-1)
+
+    N = depth.shape[0]
+    d2 = depth ** 2
+
+    # J     = Jacobian of the projection at mu_cam  (N, 2, 3)
+    # We use stack so N is in inner dimension. Transpose later so row = col here
+    J = torch.stack([
+        torch.stack([fx / depth, torch.zeros(N, device=mu3.device)]),
+        torch.stack([torch.zeros(N, device=mu3.device), fy / depth]),
+        torch.stack([- fx * mu_cam[:,0] / d2, -fy * mu_cam[:,1] / d2])
+    ])
+    # Transpose to go from (3, 2, N) => (N, 2, 3)
+    J = J.transpose(0, -1)
+    # Scam  = R_wc @ Sigma3 @ R_wc.T    (N, 3, 3). Scam stands for Scale camera
+    Scam = R_wc @ Sigma3 @ R_wc.T
+    # Sig2 = J @ Scam @ J.transpose(-1, -2)                (N, 2, 2)
+    # J: (N, 3, 3), Scam: (N, 3, 3), J: (N, 3, 3) (transpose each inner matrix)
+    Sig2 = J @ Scam @ J.transpose(-1, -2)
     return mu2, Sig2, depth

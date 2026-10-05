@@ -3,7 +3,7 @@
 import torch
 import pytest
 
-from gaussian_3d import quaternion_to_rotation, covariance_3d
+from gaussian_3d import quaternion_to_rotation, covariance_3d, project_gaussian
 
 def test_output_shape():
     """(N, 4) quaternions should produce (N, 3, 3) matrices."""
@@ -401,3 +401,447 @@ def test_covariance_3d_gradient_propagation():
 
     assert torch.isfinite(scale.grad).all()
     assert torch.isfinite(quat.grad).all()
+
+# ============================================================
+# project_gaussian tests
+# ============================================================
+
+def test_project_gaussian_output_shapes():
+    N = 10
+
+    mu3 = torch.randn(N, 3)
+    mu3[:, 2] += 5.0
+
+    Sigma3 = torch.eye(3).unsqueeze(0).repeat(N, 1, 1)
+
+    R_wc = torch.eye(3)
+    t = torch.zeros(3)
+
+    K = torch.tensor([
+        [100.0,   0.0, 50.0],
+        [  0.0, 100.0, 50.0],
+        [  0.0,   0.0,  1.0]
+    ])
+
+    mu2, Sigma2, depth = project_gaussian(
+        mu3, Sigma3, R_wc, t, K
+    )
+
+    assert mu2.shape == (N, 2)
+    assert Sigma2.shape == (N, 2, 2)
+    assert depth.shape == (N,)
+
+
+def test_project_gaussian_center_point():
+    """
+    A point on the camera's optical axis should project
+    to the principal point (cx, cy).
+    """
+    mu3 = torch.tensor([
+        [0.0, 0.0, 5.0]
+    ])
+
+    Sigma3 = torch.eye(3).unsqueeze(0)
+
+    R_wc = torch.eye(3)
+    t = torch.zeros(3)
+
+    K = torch.tensor([
+        [100.0,   0.0, 40.0],
+        [  0.0, 200.0, 30.0],
+        [  0.0,   0.0,  1.0]
+    ])
+
+    mu2, _, depth = project_gaussian(
+        mu3, Sigma3, R_wc, t, K
+    )
+
+    expected_mu = torch.tensor([
+        [40.0, 30.0]
+    ])
+
+    assert torch.allclose(mu2, expected_mu, atol=1e-6)
+    assert torch.allclose(depth, torch.tensor([5.0]), atol=1e-6)
+
+
+def test_project_gaussian_known_projection():
+    """
+    Explicitly test:
+        u = fx*x/z + cx
+        v = fy*y/z + cy
+    """
+    mu3 = torch.tensor([
+        [2.0, 3.0, 4.0]
+    ])
+
+    Sigma3 = torch.eye(3).unsqueeze(0)
+
+    R_wc = torch.eye(3)
+    t = torch.zeros(3)
+
+    K = torch.tensor([
+        [100.0,   0.0, 10.0],
+        [  0.0, 200.0, 20.0],
+        [  0.0,   0.0,  1.0]
+    ])
+
+    mu2, _, depth = project_gaussian(
+        mu3, Sigma3, R_wc, t, K
+    )
+
+    # u = 100 * 2/4 + 10 = 60
+    # v = 200 * 3/4 + 20 = 170
+    expected_mu = torch.tensor([
+        [60.0, 170.0]
+    ])
+
+    assert torch.allclose(mu2, expected_mu, atol=1e-6)
+    assert torch.allclose(depth, torch.tensor([4.0]), atol=1e-6)
+
+
+def test_project_gaussian_translation():
+    """
+    Check that camera translation is applied before projection.
+
+    world point = (0,0,5)
+    t           = (2,0,0)
+
+    camera point = (2,0,5)
+    """
+    mu3 = torch.tensor([
+        [0.0, 0.0, 5.0]
+    ])
+
+    Sigma3 = torch.eye(3).unsqueeze(0)
+
+    R_wc = torch.eye(3)
+
+    t = torch.tensor([2.0, 0.0, 0.0])
+
+    K = torch.tensor([
+        [100.0,   0.0, 0.0],
+        [  0.0, 100.0, 0.0],
+        [  0.0,   0.0, 1.0]
+    ])
+
+    mu2, _, depth = project_gaussian(
+        mu3, Sigma3, R_wc, t, K
+    )
+
+    # u = 100 * 2/5 = 40
+    # v = 0
+    expected = torch.tensor([
+        [40.0, 0.0]
+    ])
+
+    assert torch.allclose(mu2, expected, atol=1e-6)
+    assert torch.allclose(depth, torch.tensor([5.0]), atol=1e-6)
+
+
+def test_project_gaussian_known_covariance_on_axis():
+    """
+    For mu=(0,0,z), the projection Jacobian is
+
+        [[fx/z,    0, 0],
+         [   0, fy/z, 0]]
+
+    Therefore an identity 3D covariance should project to
+
+        [[(fx/z)^2,       0],
+         [      0, (fy/z)^2]]
+    """
+    mu3 = torch.tensor([
+        [0.0, 0.0, 5.0]
+    ])
+
+    Sigma3 = torch.eye(3).unsqueeze(0)
+
+    R_wc = torch.eye(3)
+    t = torch.zeros(3)
+
+    K = torch.tensor([
+        [100.0,   0.0, 0.0],
+        [  0.0, 200.0, 0.0],
+        [  0.0,   0.0, 1.0]
+    ])
+
+    _, Sigma2, _ = project_gaussian(
+        mu3, Sigma3, R_wc, t, K
+    )
+
+    # (100/5)^2 = 400
+    # (200/5)^2 = 1600
+    expected = torch.tensor([[
+        [400.0,    0.0],
+        [  0.0, 1600.0]
+    ]])
+
+    assert torch.allclose(Sigma2, expected, atol=1e-5)
+
+
+def test_project_gaussian_covariance_scales_with_depth():
+    """
+    Moving an otherwise identical Gaussian twice as far away
+    should reduce its projected covariance by 1/4.
+
+    J scales as 1/z, so Sigma2 = J Sigma J^T scales as 1/z^2.
+    """
+    Sigma3 = torch.eye(3).unsqueeze(0)
+
+    R_wc = torch.eye(3)
+    t = torch.zeros(3)
+
+    K = torch.tensor([
+        [100.0,   0.0, 0.0],
+        [  0.0, 100.0, 0.0],
+        [  0.0,   0.0, 1.0]
+    ])
+
+    near = torch.tensor([
+        [0.0, 0.0, 5.0]
+    ])
+
+    far = torch.tensor([
+        [0.0, 0.0, 10.0]
+    ])
+
+    _, Sigma_near, _ = project_gaussian(
+        near, Sigma3, R_wc, t, K
+    )
+
+    _, Sigma_far, _ = project_gaussian(
+        far, Sigma3, R_wc, t, K
+    )
+
+    assert torch.allclose(
+        Sigma_far,
+        Sigma_near / 4.0,
+        atol=1e-5
+    )
+
+
+def test_project_gaussian_covariance_symmetric():
+    """Projected covariance should remain symmetric."""
+    N = 20
+
+    mu3 = torch.randn(N, 3)
+    mu3[:, 2] += 10.0
+
+    A = torch.randn(N, 3, 3)
+    Sigma3 = A @ A.mT + 0.1 * torch.eye(3)
+
+    R_wc = torch.eye(3)
+    t = torch.zeros(3)
+
+    K = torch.tensor([
+        [100.0,   0.0, 50.0],
+        [  0.0, 100.0, 50.0],
+        [  0.0,   0.0, 1.0]
+    ])
+
+    _, Sigma2, _ = project_gaussian(
+        mu3, Sigma3, R_wc, t, K
+    )
+
+    assert torch.allclose(
+        Sigma2,
+        Sigma2.mT,
+        atol=1e-5
+    )
+
+
+def test_project_gaussian_covariance_positive_semidefinite():
+    """
+    J Sigma J^T should be positive semidefinite whenever
+    Sigma is positive semidefinite.
+    """
+    N = 20
+
+    mu3 = torch.randn(N, 3)
+    mu3[:, 2] += 10.0
+
+    A = torch.randn(N, 3, 3)
+    Sigma3 = A @ A.mT + 0.1 * torch.eye(3)
+
+    R_wc = torch.eye(3)
+    t = torch.zeros(3)
+
+    K = torch.tensor([
+        [100.0,   0.0, 50.0],
+        [  0.0, 100.0, 50.0],
+        [  0.0,   0.0, 1.0]
+    ])
+
+    _, Sigma2, _ = project_gaussian(
+        mu3, Sigma3, R_wc, t, K
+    )
+
+    eigvals = torch.linalg.eigvalsh(Sigma2)
+
+    # Small negative values can occur from floating-point error.
+    assert torch.all(eigvals >= -1e-5)
+
+
+def test_project_gaussian_batch_independence():
+    """Batching should not change the result."""
+    N = 8
+
+    mu3 = torch.randn(N, 3)
+    mu3[:, 2] += 10.0
+
+    A = torch.randn(N, 3, 3)
+    Sigma3 = A @ A.mT + 0.1 * torch.eye(3)
+
+    R_wc = torch.eye(3)
+    t = torch.zeros(3)
+
+    K = torch.tensor([
+        [100.0,   0.0, 50.0],
+        [  0.0, 100.0, 50.0],
+        [  0.0,   0.0, 1.0]
+    ])
+
+    mu2_batch, Sigma2_batch, depth_batch = project_gaussian(
+        mu3, Sigma3, R_wc, t, K
+    )
+
+    for i in range(N):
+        mu2_single, Sigma2_single, depth_single = project_gaussian(
+            mu3[i:i+1],
+            Sigma3[i:i+1],
+            R_wc,
+            t,
+            K
+        )
+
+        assert torch.allclose(
+            mu2_batch[i:i+1],
+            mu2_single,
+            atol=1e-6
+        )
+
+        assert torch.allclose(
+            Sigma2_batch[i:i+1],
+            Sigma2_single,
+            atol=1e-5
+        )
+
+        assert torch.allclose(
+            depth_batch[i:i+1],
+            depth_single,
+            atol=1e-6
+        )
+
+
+def test_project_gaussian_preserves_device():
+    device = (
+        torch.device("mps")
+        if torch.backends.mps.is_available()
+        else torch.device("cpu")
+    )
+
+    mu3 = torch.tensor(
+        [[1.0, 2.0, 5.0]],
+        device=device
+    )
+
+    Sigma3 = torch.eye(
+        3,
+        device=device
+    ).unsqueeze(0)
+
+    R_wc = torch.eye(3, device=device)
+    t = torch.zeros(3, device=device)
+
+    K = torch.tensor([
+        [100.0,   0.0, 50.0],
+        [  0.0, 100.0, 50.0],
+        [  0.0,   0.0, 1.0]
+    ], device=device)
+
+    mu2, Sigma2, depth = project_gaussian(
+        mu3, Sigma3, R_wc, t, K
+    )
+
+    assert mu2.device.type == device.type
+    assert Sigma2.device.type == device.type
+    assert depth.device.type == device.type
+
+
+def test_project_gaussian_preserves_dtype():
+    dtype = torch.float64
+
+    mu3 = torch.tensor(
+        [[1.0, 2.0, 5.0]],
+        dtype=dtype
+    )
+
+    Sigma3 = torch.eye(
+        3,
+        dtype=dtype
+    ).unsqueeze(0)
+
+    R_wc = torch.eye(3, dtype=dtype)
+    t = torch.zeros(3, dtype=dtype)
+
+    K = torch.tensor([
+        [100.0,   0.0, 50.0],
+        [  0.0, 100.0, 50.0],
+        [  0.0,   0.0, 1.0]
+    ], dtype=dtype)
+
+    mu2, Sigma2, depth = project_gaussian(
+        mu3, Sigma3, R_wc, t, K
+    )
+
+    assert mu2.dtype == dtype
+    assert Sigma2.dtype == dtype
+    assert depth.dtype == dtype
+
+
+def test_project_gaussian_gradient_propagation():
+    """
+    Projection must preserve gradients back to both the
+    3D mean and 3D covariance.
+    """
+    mu3 = torch.tensor(
+        [[1.0, 2.0, 5.0]],
+        requires_grad=True
+    )
+
+    A = torch.tensor(
+        [[[1.0, 0.2, 0.1],
+          [0.0, 1.5, 0.3],
+          [0.0, 0.0, 0.8]]],
+        requires_grad=True
+    )
+
+    # Make a valid covariance while keeping the graph.
+    Sigma3 = A @ A.mT
+
+    R_wc = torch.eye(3)
+    t = torch.zeros(3)
+
+    K = torch.tensor([
+        [100.0,   0.0, 50.0],
+        [  0.0, 120.0, 40.0],
+        [  0.0,   0.0, 1.0]
+    ])
+
+    mu2, Sigma2, depth = project_gaussian(
+        mu3, Sigma3, R_wc, t, K
+    )
+
+    loss = (
+        mu2.square().sum()
+        + Sigma2.square().sum()
+        + depth.square().sum()
+    )
+
+    loss.backward()
+
+    assert mu3.grad is not None
+    assert A.grad is not None
+
+    assert torch.isfinite(mu3.grad).all()
+    assert torch.isfinite(A.grad).all()
