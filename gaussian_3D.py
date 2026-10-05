@@ -41,5 +41,7 @@ def quaternion_to_rotation(q):
 
 def covariance_3d(scale, quat):
     # scale: (N, 3) positive,  quat: (N, 4)
-    # TODO: R = quaternion_to_rotation(quat); return R S S^T R^T  -> (N, 3, 3)
-    return ...
+    # R = quaternion_to_rotation(quat); return R S S^T R^T  -> (N, 3, 3)
+    R = quaternion_to_rotation(quat)
+    S = torch.diag_embed(scale)
+    return R @ S @ S.mT @ R.mT
