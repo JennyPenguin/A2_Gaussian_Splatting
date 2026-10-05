@@ -65,27 +65,46 @@ def project_gaussian(mu3, Sigma3, R_wc, t, K):
     cy = K[1][2]
     # z_c
     depth = mu_cam[:,2]
-    # (2, N)
+
+    inv_z = 1.0 / depth
+    x_z = mu_cam[:, 0] * inv_z
+    y_z = mu_cam[:, 1] * inv_z
+
+    # (N, 2)
     mu2 = torch.stack([
-        mu_cam[:,0] * fx / depth + cx,
-        mu_cam[:,1] * fy / depth + cy,
+        fx * x_z + cx,
+        fy * y_z + cy,
     ], dim=-1)
 
-    N = depth.shape[0]
-    d2 = depth ** 2
+    zero = torch.zeros_like(depth)
 
     # J     = Jacobian of the projection at mu_cam  (N, 2, 3)
-    # We use stack so N is in inner dimension. Transpose later so row = col here
+    # Inner stack is (N, 3) and then insert dimension of 2 in middle
     J = torch.stack([
-        torch.stack([fx / depth, torch.zeros(N, device=mu3.device)]),
-        torch.stack([torch.zeros(N, device=mu3.device), fy / depth]),
-        torch.stack([- fx * mu_cam[:,0] / d2, -fy * mu_cam[:,1] / d2])
-    ])
-    # Transpose to go from (3, 2, N) => (N, 2, 3)
-    J = J.transpose(0, -1)
-    # Scam  = R_wc @ Sigma3 @ R_wc.T    (N, 3, 3). Scam stands for Scale camera
-    Scam = R_wc @ Sigma3 @ R_wc.T
-    # Sig2 = J @ Scam @ J.transpose(-1, -2)                (N, 2, 2)
-    # J: (N, 3, 3), Scam: (N, 3, 3), J: (N, 3, 3) (transpose each inner matrix)
-    Sig2 = J @ Scam @ J.transpose(-1, -2)
-    return mu2, Sig2, depth
+        torch.stack([fx * inv_z, zero, -fx * x_z * inv_z], dim=-1),
+        torch.stack([zero, fy * inv_z, -fy * y_z * inv_z], dim=-1),
+    ], dim=1)
+
+    # Sigma_cam: (N, 3, 3)
+    Sigma_cam = R_wc @ Sigma3 @ R_wc.T
+    # Sigma2 = J @ Scam @ J.transpose(-1, -2)                (N, 2, 2)
+    # J: (N, 2, 3), Scam: (N, 3, 3), J: (N, 3, 2) (transpose each inner matrix)
+    # Give (N, 2, 2)
+    Sigma2 = J @ Sigma_cam @ J.transpose(-1, -2)
+    return mu2, Sigma2, depth
+
+# For future me:
+# mu3          (N, 3)
+#   ↓ world → camera
+# mu_cam       (N, 3)
+#   ↓ perspective projection
+# mu2          (N, 2)
+
+# Sigma3       (N, 3, 3)
+#   ↓ R_wc Σ R_wcᵀ
+# Sigma_cam    (N, 3, 3)
+#   ↓ J Σ_cam Jᵀ
+# Sigma2       (N, 2, 2)
+
+# depth        (N,)
+# J            (N, 2, 3)
