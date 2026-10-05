@@ -78,7 +78,7 @@ def project_gaussian(mu3, Sigma3, R_wc, t, K):
 
     zero = torch.zeros_like(depth)
 
-    # J     = Jacobian of the projection at mu_cam  (N, 2, 3)
+    # J = Jacobian of the projection at mu_cam  (N, 2, 3)
     # Inner stack is (N, 3) and then insert dimension of 2 in middle
     J = torch.stack([
         torch.stack([fx * inv_z, zero, -fx * x_z * inv_z], dim=-1),
