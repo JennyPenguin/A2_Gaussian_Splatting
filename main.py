@@ -2,8 +2,6 @@ import torch
 import matplotlib.pyplot as plt
 
 from fit import fit_2D, evaluate, get_device
-from gaussian import covariance_2d
-from rasterize import render
 from image import load_normalized_image, save_normalized_image
 
 # ---------------------------------------------------------------------
