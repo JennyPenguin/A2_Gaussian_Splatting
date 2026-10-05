@@ -8,6 +8,7 @@ from fit import get_device
 
 ROOT_PATH = "train_images/spheres/"
 device = get_device()
+N = 4000
 
 def convert_frames(frames, H, W):
     N_frames = len(frames)
@@ -53,6 +54,8 @@ def load_cameras(root_path):
             (val_R, val_t, val_img, H, W, K), val_img_names)
 
 def train_3D():
+    # set seed so can compare consistently
+    torch.manual_seed(0)
     train_cameras, train_names, val_cameras, val_names = load_cameras(ROOT_PATH)
     mu3, log_s, quat, color, op_raw = fit_3D(train_cameras)
 
@@ -60,25 +63,26 @@ def train_3D():
     print(f"\033[31mNum Gaussians: {N_g}\033[0m")
 
     train_R, train_t, train_img, H, W, K = train_cameras
-    num_train_cams = len(train_cameras)
-    num_val_cams = len(train_cameras)
+    val_R, val_t, val_img, _, _, _ = val_cameras
+    num_train_cams = len(train_img)
+    num_val_cams = len(val_img)
     train_PSNR_avg = 0.0
-    for i in range(num_train_cams):
+    for i in range(num_train_cams // 4):
         cam = (train_R[i], train_t[i], train_img[i], H, W, K)
         name = train_names[i]
         img, psnr = evaluate_3D(mu3, log_s, quat, color, op_raw, cam)
-        save_normalized_image(ROOT_PATH + "results/" + name, img)
-        train_PSNR_avg += psnr / num_train_cams
+        save_normalized_image(ROOT_PATH + "results/" + name[:-4] + "_" + str(N) + ".png", img)
+        train_PSNR_avg += psnr / (num_train_cams // 4)
         print(f"\033[31mPSNR{psnr} for Image: {name} \033[0m")
     print(f"Average Train PSNR: {train_PSNR_avg}")
 
     val_PSNR_avg = 0.0
-    for i in range(num_val_cams):
-        cam = (train_R[i], train_t[i], train_img[i], H, W, K)
-        name = train_names[i]
+    for i in range(num_val_cams // 4):
+        cam = (val_R[i], val_t[i], val_img[i], H, W, K)
+        name = val_names[i]
         img, psnr = evaluate_3D(mu3, log_s, quat, color, op_raw, cam)
-        save_normalized_image(ROOT_PATH + "results/" + name, img)
-        val_PSNR_avg += psnr / num_val_cams
+        save_normalized_image(ROOT_PATH + "results/" + name[:-4] + "_" + str(N) + ".png", img)
+        val_PSNR_avg += psnr / (num_val_cams // 4)
         print(f"\033[31mPSNR{psnr} for Image: {name} \033[0m")
     print(f"Average Val PSNR: {val_PSNR_avg}")
     
