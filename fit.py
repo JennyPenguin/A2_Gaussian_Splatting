@@ -58,9 +58,39 @@ def fit_2D(N, target, max_count, densification=True):
         # By learning log scale and then exp, we guarantee scale is positive
         # Because exp multiply, also means when we add to log scale we multiply
         # original scale so same percentage increase regardless of org size.
+        # if step > 1800:
+        #     check_finite("mu", mu, step)
+        #     check_finite("log_s", log_s, step)
+        #     check_finite("theta", theta, step)
+        #     check_finite("color", color, step)
+        #     check_finite("op_raw", op_raw, step)
         s = log_s.exp()
+        # if step > 1800:
+        #     check_finite("scale", s, step)
         Sigma = covariance_2d(s, theta)
+        # if step > 1800:
+        #     check_finite("Sigma", Sigma, step)
+        #     print(
+        #         f"scale: min={s.min().item():.3e}, "
+        #         f"max={s.max().item():.3e}"
+        #     )
+
+        #     print(
+        #         f"log_s: min={log_s.min().item():.3e}, "
+        #         f"max={log_s.max().item():.3e}"
+        #     )
+    
         img   = render(mu, Sigma, color.sigmoid(), op_raw.sigmoid(), depth_order(mu), H, W)
+
+        # if step > 1800:
+        #     print("After render")
+        #     check_finite("img", img, step)
+        #     check_finite("loss", loss, step)
+        #     check_finite("mu.grad", mu.grad, step)
+        #     check_finite("log_s.grad", log_s.grad, step)
+        #     check_finite("theta.grad", theta.grad, step)
+        #     check_finite("color.grad", color.grad, step)
+        #     check_finite("op_raw.grad", op_raw.grad, step)
 
         # torch.mps.synchronize()
         # t1 = time.perf_counter()
@@ -68,6 +98,15 @@ def fit_2D(N, target, max_count, densification=True):
         loss  = ((img - target) ** 2).mean()
         
         opt.zero_grad(); loss.backward(); 
+
+        # if step > 1800:
+        #     print("After backwards")
+        #     check_finite("loss", loss, step)
+        #     check_finite("mu.grad", mu.grad, step)
+        #     check_finite("log_s.grad", log_s.grad, step)
+        #     check_finite("theta.grad", theta.grad, step)
+        #     check_finite("color.grad", color.grad, step)
+        #     check_finite("op_raw.grad", op_raw.grad, step)
 
         # torch.mps.synchronize()
         # t2 = time.perf_counter()
@@ -81,6 +120,15 @@ def fit_2D(N, target, max_count, densification=True):
 
         opt.step()
 
+        # if step > 1800:
+        #     print("After loss")
+        #     check_finite("loss", loss, step)
+        #     check_finite("mu.grad", mu.grad, step)
+        #     check_finite("log_s.grad", log_s.grad, step)
+        #     check_finite("theta.grad", theta.grad, step)
+        #     check_finite("color.grad", color.grad, step)
+        #     check_finite("op_raw.grad", op_raw.grad, step)
+
         # torch.mps.synchronize()
         # t3 = time.perf_counter()
 
@@ -88,14 +136,12 @@ def fit_2D(N, target, max_count, densification=True):
         # print("backward:", t2 - t1)
         # print("optimizer:", t3 - t2)
 
-        if step == 1 or step % densify_every == 0:
-            psnr = -10 * torch.log10(loss)
-            # print(f"Step {step} PSNR: {psnr}")
-
         # Don't densify on last iteration bc won't have time to adapt cloned/
         # split Gaussians afterwards
         if step % densify_every == 0 and step < 2000:
             # save_normalized_image(f"debug/{step}.png", img.detach())
+            psnr = -10 * torch.log10(loss)
+            print(f"Step {step} PSNR: {psnr}")
 
             if densification:
                 gaussians = densify((mu, log_s, theta, color, op_raw), grad_mag,max_count, W, H)
@@ -109,6 +155,7 @@ def fit_2D(N, target, max_count, densification=True):
                     mu.shape[0],
                     device=device
                 )
+
                 # Restart Adam
                 opt = torch.optim.Adam([mu, log_s, theta, color, op_raw], lr=1e-2)
     return mu, log_s, theta, color, op_raw
@@ -134,3 +181,15 @@ def evaluate(mu, log_s, theta, color, op_raw, target):
     loss  = ((img - target) ** 2).mean()
     psnr = -10 * torch.log10(loss)
     return (img, psnr)
+
+
+def check_finite(name, x, step):
+    if x is None:
+        print(f"{name} is None at step {step}")
+        return True
+
+    if not torch.isfinite(x).all():
+        print(f"NON-FINITE {name} at step {step}")
+        assert False
+
+    return True
