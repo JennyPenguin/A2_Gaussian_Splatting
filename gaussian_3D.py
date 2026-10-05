@@ -45,3 +45,13 @@ def covariance_3d(scale, quat):
     R = quaternion_to_rotation(quat)
     S = torch.diag_embed(scale)
     return R @ S @ S.mT @ R.mT
+
+def project_gaussian(mu3, Sigma3, R_wc, t, K):
+    # mu3: (N, 3) world means,  Sigma3: (N, 3, 3) world covariances
+    mu_cam = mu3 @ R_wc.T + t                  # world -> camera
+    # TODO: mu2   = perspective-project mu_cam with K            (N, 2)
+    # TODO: J     = Jacobian of the projection at mu_cam         (N, 2, 3)
+    # TODO: Scam  = R_wc @ Sigma3 @ R_wc.T                       (N, 3, 3)
+    #       Sig2 = J @ Scam @ J.transpose(-1, -2)                (N, 2, 2)
+    depth = mu_cam[:, 2]
+    return mu2, Sig2, depth
