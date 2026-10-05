@@ -37,7 +37,7 @@ def train_2D():
         for image in images:
             # fit_2D will move it to GPU if needed
             target = loaded_images[image]
-            for densify in range(1, densification_runs):
+            for densify in range(0, densification_runs):
                 print(f"Training for image {image} and budget: {budget} and densifcation: {densify}")
                 # Start with 1/4 of target so can have good approximation in first
                 # iterations before densify and can fully densify at least twice
