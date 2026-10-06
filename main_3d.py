@@ -71,7 +71,7 @@ def train_3D():
         cam = (train_R[i], train_t[i], train_img[i], H, W, K)
         name = train_names[i]
         img, psnr = evaluate_3D(mu3, log_s, quat, color, op_raw, cam)
-        save_normalized_image(ROOT_PATH + "results/" + name[:-4] + "_" + str(N) + ".png", img)
+        save_normalized_image(ROOT_PATH + "results/" + name, img)
         train_PSNR_avg += psnr / (num_train_cams)
         print(f"\033[31mPSNR{psnr} for Image: {name} \033[0m")
     print(f"Average Train PSNR: {train_PSNR_avg}")
@@ -81,7 +81,7 @@ def train_3D():
         cam = (val_R[i], val_t[i], val_img[i], H, W, K)
         name = val_names[i]
         img, psnr = evaluate_3D(mu3, log_s, quat, color, op_raw, cam)
-        save_normalized_image(ROOT_PATH + "results/" + name[:-4] + "_" + str(N) + ".png", img)
+        save_normalized_image(ROOT_PATH + "results/" + name, img)
         val_PSNR_avg += psnr / (num_val_cams)
         print(f"\033[31mPSNR{psnr} for Image: {name} \033[0m")
     print(f"Average Val PSNR: {val_PSNR_avg}")
