@@ -10,7 +10,7 @@ ROOT_PATH = "train_images/spheres/"
 device = get_device()
 N = 1000
 NEW_ORBIT = True
-RENDER_TRAIN_VAL = False
+RENDER_TRAIN_VAL = True
 
 def convert_frames(frames, H, W):
     N_frames = len(frames)
