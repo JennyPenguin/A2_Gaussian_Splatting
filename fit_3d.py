@@ -5,7 +5,7 @@ from fit import get_device, make_trainable
 from densification_3d import densify_3d
 
 dev = get_device()
-DENSIFY = True
+DENSIFY = False
 # run a pass every 100 optimization steps
 densify_every = 100
 
@@ -17,8 +17,11 @@ densify_every = 100
 
 # train_cameras: map from index to R, t, K, H, W, and img (normalized on device)
 def fit_3D(train_cameras, iters = 1500):
-    N = 1000
-    max_budget = 4000
+    N = 4000
+    if DENSIFY:
+        max_budget = N
+        N /= 4
+    
     # parameters (leaf tensors, requires_grad=True); example init for this scene:
      # (N, 3)  cloud in ~[-1.5, 1.5]^3
     mu3 = (torch.rand(N, 3, device=dev) * 2.0 - 1.0) *  1.5

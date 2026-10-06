@@ -8,7 +8,9 @@ from fit import get_device
 
 ROOT_PATH = "train_images/spheres/"
 device = get_device()
-N = 4000
+N = 1000
+NEW_ORBIT = True
+RENDER_TRAIN_VAL = False
 
 def convert_frames(frames, H, W):
     N_frames = len(frames)
@@ -67,6 +69,18 @@ def train_3D():
     num_train_cams = len(train_img)
     num_val_cams = len(val_img)
     train_PSNR_avg = 0.0
+    
+    if NEW_ORBIT:
+        move = torch.tensor([0.03, 0.0, 0.0])
+        move = move.to(device)
+        for i in range(10):
+            cam_i = (train_R[0], train_t[0] + i * move, train_img[0], H, W, K)
+            img, psnr = evaluate_3D(mu3, log_s, quat, color, op_raw, cam_i)
+            save_normalized_image(ROOT_PATH + "results/new/" + str(i) + ".png", img)
+
+    if not RENDER_TRAIN_VAL:
+        return 
+    
     for i in range(num_train_cams):
         cam = (train_R[i], train_t[i], train_img[i], H, W, K)
         name = train_names[i]
@@ -84,7 +98,6 @@ def train_3D():
         save_normalized_image(ROOT_PATH + "results/" + name, img)
         val_PSNR_avg += psnr / (num_val_cams)
         print(f"\033[31mPSNR{psnr} for Image: {name} \033[0m")
-    print(f"Average Val PSNR: {val_PSNR_avg}")
-    
+    print(f"Average Val PSNR: {val_PSNR_avg}")    
 
 train_3D()
